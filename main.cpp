@@ -241,7 +241,7 @@ void Render(glm::vec3 eye) {
 
 
 	auto start = std::chrono::high_resolution_clock::now();
-	const float supersampling = 0.5;
+	const float supersampling = 0.5f * (512.0f / WIDTH);
 	/////////////////레이캐스팅
 	for (int y = 0; y < HEIGHT; y++) { // 영상의 y좌표
 		for (int x = 0; x < WIDTH; x++) { // 영상의 x좌표

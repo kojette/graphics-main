@@ -6,8 +6,8 @@
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
-#define WIDTH   512
-#define HEIGHT  512
+#define WIDTH   1024
+#define HEIGHT  1024
 #define VOLX 256
 #define VOLY 256	
 #define VOLZ 225
@@ -101,7 +101,7 @@ __device__ float GetDensity(cudaTextureObject_t volTex, float3 p) {
 __global__ void mipKernel(cudaTextureObject_t volTex, cudaTextureObject_t sumTex, unsigned char* MyTexture, float3 eye, float* dev_alpha,
     float* dev_colorR, float* dev_colorG, float* dev_colorB) {
     int y = blockIdx.x;
-    int x = threadIdx.x;
+    int x = blockIdx.y * blockDim.x + threadIdx.x; //threadIdx.x;
     //고정값 먼저 만듦. 근데 이거 고정이면 그냥 전역 처리가 나을지도. -> 전역 처리
     //float3 at = make_float3(128.0f, 128.0f, 112.0f);
     //float3 up = make_float3(0.0f, 1.0f, 0.0f);
@@ -110,7 +110,7 @@ __global__ void mipKernel(cudaTextureObject_t volTex, cudaTextureObject_t sumTex
     float3 u = normalize(cross(up, w));
     float3 v = normalize(cross(w, u));
     //레이캐스팅 
-    const float supersampling = 0.5;
+    const float supersampling = 0.5f * (512.0f / WIDTH);
     float3 RS = eye + u * (x - WIDTH * 0.5f) * supersampling + v * (y - HEIGHT * 0.5f) * supersampling;
 
     float t1, t2; // 한 구간
@@ -305,7 +305,12 @@ extern "C" int cumain(float ex, float ey, float ez) { // 메모리할당은 cuInit에서
     cudaEventRecord(start);
     // 커널 실행
     float3 eye = make_float3(ex, ey, ez);
-    mipKernel << <HEIGHT, WIDTH >> > (volTex, sumTex, dev_img, eye, dev_alpha, dev_colorR, dev_colorG, dev_colorB);
+
+    int threadsPerBlock = 256;
+    dim3 block(threadsPerBlock);
+    dim3 grid(HEIGHT, (WIDTH + threadsPerBlock - 1) / threadsPerBlock);
+    //grid.x = y, grid.y = x방향을 256개씩 쪼갠 블록? 개수
+    mipKernel << <grid, block >> > (volTex, sumTex, dev_img, eye, dev_alpha, dev_colorR, dev_colorG, dev_colorB);
     cudaEventRecord(stop);
 
     cudaEventSynchronize(stop); // 커널 끝날 때까지 대기

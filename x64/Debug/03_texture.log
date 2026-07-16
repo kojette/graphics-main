@@ -1,7 +1,7 @@
 ﻿  Compiling CUDA source file cumian.cu...
   
   C:\Users\1415\Downloads\GraphicsFreeGLUT_v3_2\GraphicsFreeGLUT_v3_2\03_texture>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.8\bin\nvcc.exe" -gencode=arch=compute_52,code=\"sm_52,compute_52\" --use-local-env -ccbin "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30133\bin\HostX86\x64" -x cu   -IC:\Users\1415\Downloads\GraphicsFreeGLUT_v3_2\GraphicsFreeGLUT_v3_2\FreeGLUT -IC:\Users\1415\Downloads\GraphicsFreeGLUT_v3_2\GraphicsFreeGLUT_v3_2\glm -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.8\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.8\include"  -G   --keep-dir x64\Debug  -maxrregcount=0  --machine 64 --compile -cudart static  -g  -D_DEBUG -D_CONSOLE -D_UNICODE -DUNICODE -Xcompiler "/EHsc /W3 /nologo /Od /Fdx64\Debug\vc142.pdb /FS /Zi /RTC1 /MDd " -o C:\Users\1415\Downloads\GraphicsFreeGLUT_v3_2\GraphicsFreeGLUT_v3_2\03_texture\x64\Debug\cumian.cu.obj "C:\Users\1415\Downloads\GraphicsFreeGLUT_v3_2\GraphicsFreeGLUT_v3_2\03_texture\cumian.cu" 
-C:\Users\1415\Downloads\GraphicsFreeGLUT_v3_2\GraphicsFreeGLUT_v3_2\03_texture\cumian.cu(134): warning #177-D: variable "maxVal" was declared but never referenced
+C:\Users\1415\Downloads\GraphicsFreeGLUT_v3_2\GraphicsFreeGLUT_v3_2\03_texture\cumian.cu(136): warning #177-D: variable "maxVal" was declared but never referenced
   
   cumian.cu
   main.cpp
