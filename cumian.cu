@@ -6,8 +6,8 @@
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
-#define WIDTH   1024
-#define HEIGHT  1024
+#define WIDTH   2048
+#define HEIGHT  2048
 #define VOLX 256
 #define VOLY 256	
 #define VOLZ 225
