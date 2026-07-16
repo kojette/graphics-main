@@ -6,8 +6,8 @@
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
-#define WIDTH   1024
-#define HEIGHT  1024
+#define WIDTH   512
+#define HEIGHT  512
 #define VOLX 256
 #define VOLY 256	
 #define VOLZ 225
@@ -51,6 +51,10 @@ __device__ __inline__ int getBlockIdDevice(float3 p) {//아이디 암호화 함수
     return (bx << 10) | (by << 5) | bz;
 }
 __device__ float GetDensity(cudaTextureObject_t volTex, float3 p) {
+    return tex3D<unsigned char>(volTex, p.x, p.y, p.z);
+
+
+
     p.x = fminf(fmaxf(p.x, 0.0f), (float)(VOLX - 2));
     p.y = fminf(fmaxf(p.y, 0.0f), (float)(VOLY - 2));
     p.z = fminf(fmaxf(p.z, 0.0f), (float)(VOLZ - 2));
@@ -97,9 +101,7 @@ __device__ float GetDensity(cudaTextureObject_t volTex, float3 p) {
 __global__ void mipKernel(cudaTextureObject_t volTex, cudaTextureObject_t sumTex, unsigned char* MyTexture, float3 eye, float* dev_alpha,
     float* dev_colorR, float* dev_colorG, float* dev_colorB) {
     int y = blockIdx.x;
-    //int x = threadIdx.x;
-    int x = blockIdx.y * blockDim.x + threadIdx.x;
-    if (x >= WIDTH) return;
+    int x = threadIdx.x;
     //고정값 먼저 만듦. 근데 이거 고정이면 그냥 전역 처리가 나을지도. -> 전역 처리
     //float3 at = make_float3(128.0f, 128.0f, 112.0f);
     //float3 up = make_float3(0.0f, 1.0f, 0.0f);
@@ -296,25 +298,23 @@ extern "C" int cuFree() {
 extern "C" int cumain(float ex, float ey, float ez) { // 메모리할당은 cuInit에서 하고, 커널 실행은 cumain에서 한다.
     // 데이터 복사
     //cudaMemcpy(dev_vol, vol, VOLX * VOLY * VOLZ * sizeof(unsigned char), cudaMemcpyHostToDevice);
-    //cudaMemcpy(dev_img, MyTexture, HEIGHT * WIDTH * 3 * sizeof(unsigned char), cudaMemcpyHostToDevice);
-
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
     cudaEventRecord(start);
+    // 커널 실행
     float3 eye = make_float3(ex, ey, ez);
-    //화면 사이즈를 위한 조정
-    dim3 block(256); 
-    dim3 grid(HEIGHT, (WIDTH + block.x - 1) / block.x);
-    mipKernel << <grid, block >> > (volTex, sumTex, dev_img, eye, dev_alpha, dev_colorR, dev_colorG, dev_colorB);
-    cudaEventSynchronize(stop);
+    mipKernel << <HEIGHT, WIDTH >> > (volTex, sumTex, dev_img, eye, dev_alpha, dev_colorR, dev_colorG, dev_colorB);
+    cudaEventRecord(stop);
+
+    cudaEventSynchronize(stop); // 커널 끝날 때까지 대기
     float ms = 0;
     cudaEventElapsedTime(&ms, start, stop);
     printf("kernel time: %f ms\n", ms);
+
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
-
     // 결과 복사//
     cudaMemcpy(MyTexture, dev_img, HEIGHT * WIDTH * 3 * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 
