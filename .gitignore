@@ -1,0 +1,12 @@
+# Visual Studio 빌드 결과물 및 임시 폴더
+x64/
+Debug/
+Release/
+
+# 컴파일 임시/바이너리 파일
+*.obj
+*.ilk
+*.idb
+*.pdb
+*.log
+*.tlog
