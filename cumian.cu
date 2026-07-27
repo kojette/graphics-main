@@ -10,11 +10,21 @@
 #define VOLX 256
 #define VOLY 256	
 #define VOLZ 225
+#define TABLE_SIZE 256
+
+// GPU측 포인터
+float* dev_preAlpha = 0;
+float* dev_preColorR = 0, * dev_preColorG = 0, * dev_preColorB = 0;
 
 extern float alphaTable[256];
 extern float colorTableR[256];
 extern float colorTableG[256];
 extern float colorTableB[256];
+
+extern float preAlpha[TABLE_SIZE * TABLE_SIZE];
+extern float preColorR[TABLE_SIZE * TABLE_SIZE];
+extern float preColorG[TABLE_SIZE * TABLE_SIZE];
+extern float preColorB[TABLE_SIZE * TABLE_SIZE];
 
 //tex3d
 cudaTextureObject_t volTex = 0;
@@ -39,8 +49,8 @@ __global__ void addKernel(int* c, const int* a, const int* b) {
     int i = threadIdx.x;
     c[i] = a[i] + b[i];
 }
-__global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, float3 eye, float* dev_alpha,
-    float* dev_colorR, float* dev_colorG, float* dev_colorB) {
+__global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, float3 eye, 
+    float* dev_preAlpha, float* dev_preColorR, float* dev_preColorG, float* dev_preColorB) {
     int y = blockIdx.x;
     int x = blockIdx.y * blockDim.x + threadIdx.x; //threadIdx.x;
     //카메라 축 계산
@@ -70,27 +80,37 @@ __global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, 
     float tM = fminf(fminf(xM, yM), zM);
     if (tm > tM) return;
 
-    const float step = 0.5;
-    float maxVal = 0.0f;//MIP관련으로 
-    float r_sum = 0.0f, g_sum = 0.0f, b_sum = 0.0f;
-    float a_sum = 0.0f;
-    for (float t = tm; t < tM; t = t + step) { //광선
-        float3 p = RS + w * t;
+    const float step = 0.5;//segmentLength로 통일해도 좋을 것 같다만?
+    //float maxVal = 0.0f;//MIP관련으로 
+    float r_sum = 0.0f, g_sum = 0.0f, b_sum = 0.0f, a_sum = 0.0f;
+    //최초 1회 front만 읽고 이후에는 back을 사용하기 위해서 아래 계산을 시행. 
+    int sf = (int)roundf(tex3D<float>(volTex, RS.x + w.x * tm + 0.5f, RS.y + w.y * tm + 0.5f, RS.z + w.z * tm + 0.5f) * (float)(TABLE_SIZE - 1));
+    for (float t = tm; t < tM - step; t += step) { //광선
+        float3 p = RS + w * (t+step);//뒤에 
 
         //쿠다텍스처는 좌표가 경계를 의미하지 않아서 오프셋 처리 해야 결과 유지됨. 
         float val = tex3D<float>(volTex, p.x + 0.5f, p.y + 0.5f, p.z + 0.5f);//(volTex, p.x, p.y, p.z); 
-        int d = (int)(val * 255.0f);//원래 밀도 스케일(0~255)로 변환함. 
-        float alpha = dev_alpha[d];
-        if (alpha == 0.0f) continue;
-        float r = dev_colorR[d];
-        float g = dev_colorG[d];
-        float b = dev_colorB[d];
-        r_sum += (1.0f - a_sum) * r * alpha;
-        g_sum += (1.0f - a_sum) * g * alpha;
-        b_sum += (1.0f - a_sum) * b * alpha;
-        a_sum += (1.0f - a_sum) * alpha;
+        int sb = (int)roundf(val * (float)(TABLE_SIZE - 1));
+
+        int d = (int)(sf * TABLE_SIZE + sb);//원래 밀도 스케일(0~255)로 변환하여 id get
+        float alpha = dev_preAlpha[d];
+
+        if (alpha > 0.0f) {
+            float r = dev_preColorR[d];
+            float g = dev_preColorG[d];
+            float b = dev_preColorB[d];
+            r_sum += (1.0f - a_sum) * r;
+            g_sum += (1.0f - a_sum) * g;
+            b_sum += (1.0f - a_sum) * b;
+            a_sum += (1.0f - a_sum) * alpha;
+        }
         if (a_sum > 0.99f) break;
+        sf = sb;//다음 회차에 쓰려구
+    
     }
+    r_sum = fminf(fmaxf(r_sum, 0.0f), 1.0f);
+    g_sum = fminf(fmaxf(g_sum, 0.0f), 1.0f);
+    b_sum = fminf(fmaxf(b_sum, 0.0f), 1.0f);
     MyTexture[(y * WIDTH + x) * 3 + 0] = (unsigned char)(r_sum * 255);
     MyTexture[(y * WIDTH + x) * 3 + 1] = (unsigned char)(g_sum * 255);
     MyTexture[(y * WIDTH + x) * 3 + 2] = (unsigned char)(b_sum * 255);
@@ -141,6 +161,16 @@ extern "C" int cuInit() {
     cudaMemcpy(dev_colorG, colorTableG, 256 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(dev_colorB, colorTableB, 256 * sizeof(float), cudaMemcpyHostToDevice);
 
+
+    cudaMalloc((void**)&dev_preAlpha, TABLE_SIZE * TABLE_SIZE * sizeof(float));
+    cudaMalloc((void**)&dev_preColorR, TABLE_SIZE * TABLE_SIZE * sizeof(float));
+    cudaMalloc((void**)&dev_preColorG, TABLE_SIZE * TABLE_SIZE * sizeof(float));
+    cudaMalloc((void**)&dev_preColorB, TABLE_SIZE * TABLE_SIZE * sizeof(float));
+    cudaMemcpy(dev_preAlpha, preAlpha, TABLE_SIZE * TABLE_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_preColorR, preColorR, TABLE_SIZE * TABLE_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_preColorG, preColorG, TABLE_SIZE * TABLE_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_preColorB, preColorB, TABLE_SIZE * TABLE_SIZE * sizeof(float), cudaMemcpyHostToDevice);
+
     return 0;
 }
 extern "C" int cuFree() {
@@ -172,7 +202,7 @@ extern "C" int cumain(float ex, float ey, float ez) { // 메모리할당은 cuInit에서
     dim3 block(threadsPerBlock);
     dim3 grid(HEIGHT, (WIDTH + threadsPerBlock - 1) / threadsPerBlock);
     //grid.x = y, grid.y = x방향을 256개씩 쪼갠 블록? 개수(스레드 개수땜)
-    mipKernel << <grid, block >> > (volTex, dev_img, eye, dev_alpha, dev_colorR, dev_colorG, dev_colorB);
+    mipKernel << <grid, block >> > (volTex, dev_img, eye, dev_preAlpha, dev_preColorR, dev_preColorG, dev_preColorB);
     cudaEventRecord(stop);
 
     cudaEventSynchronize(stop); // 커널 끝날 때까지 대기

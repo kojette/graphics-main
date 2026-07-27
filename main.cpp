@@ -39,6 +39,20 @@ float colorTableR[256];
 float colorTableG[256];
 float colorTableB[256];
 
+//pre-integration
+#define DEFAULT_SEGMENT_LENGTH 0.5f   // 기존 코드의 step=0.5 와 동일 값 (호환성)
+#define TABLE_SIZE 256         
+// preT[s]  = ∫[0..s] alphaTable(s') ds'  (논문 T(s), τ의 누적적분)
+// preKr/g/b[s] = ∫[0..s] colorTable(s') ds' (논문 K(s), c?의 누적적분)
+float preT[TABLE_SIZE];
+float preKr[TABLE_SIZE], preKg[TABLE_SIZE], preKb[TABLE_SIZE];
+// 좌표축이 (sf, sb) 두 개인 2D 테이블. CPU에서 만든 뒤 GPU로 1회 업로드.
+// 배열은 1차원으로 펼쳐서 저장: index = sf * TABLE_RES + sb
+float preAlpha[TABLE_SIZE * TABLE_SIZE];
+float preColorR[TABLE_SIZE * TABLE_SIZE];
+float preColorG[TABLE_SIZE * TABLE_SIZE];
+float preColorB[TABLE_SIZE * TABLE_SIZE];
+
 //구조체----------------------------------------------------------------
 struct alphaPoint {
 	int x;//density
@@ -211,7 +225,6 @@ void InitTables() {
 	//in : alphaTable
 	//out : sumTable
 
-
 	ColorTable ct;
 	ct.AddPoint(0, 0.0f, 0.0f, 0.0f);
 	ct.AddPoint(120, 0.1f, 0.2f, 0.55f);   // 딥블루 오팔베이스
@@ -227,7 +240,54 @@ int inline GetBlockId(glm::vec3 p) {//(개선+); 시프트 연산자로 블록 아이디 계산
 	int bx = x >> BSHIFT, by = y >> BSHIFT, bz = z >> BSHIFT;
 	return (bx << 10) | (by << 5) | bz; // 수정A-4: 시프트 복호화로(어차피 진수표현만 상이)
 }
+void BuildPreIntegrationTable(float segmentLength) {
+	// 1) preT, preK 누적 적분 (사다리꼴)
+	preT[0] = 0.0f;
+	preKr[0] = preKg[0] = preKb[0] = 0.0f;
+	for (int s = 1; s < TABLE_SIZE; s++) {
+		// preT: tau의 누적 (tau ? alphaTable)
+		preT[s] = preT[s - 1] + 0.5f * (alphaTable[s - 1] + alphaTable[s]);
+		// preK: associated color의 누적
+		float ar0 = colorTableR[s - 1] * alphaTable[s - 1];
+		float ar1 = colorTableR[s] * alphaTable[s];
+		float ag0 = colorTableG[s - 1] * alphaTable[s - 1];
+		float ag1 = colorTableG[s] * alphaTable[s];
+		float ab0 = colorTableB[s - 1] * alphaTable[s - 1];
+		float ab1 = colorTableB[s] * alphaTable[s];
+		preKr[s] = preKr[s - 1] + 0.5f * (ar0 + ar1);
+		preKg[s] = preKg[s - 1] + 0.5f * (ag0 + ag1);
+		preKb[s] = preKb[s - 1] + 0.5f * (ab0 + ab1);
+	}
 
+	// 2) 2D 테이블
+	for (int sf = 0; sf < TABLE_SIZE; sf++) {
+		for (int sb = 0; sb < TABLE_SIZE; sb++) {  // 대칭 최적화 하지 말고 전부 채우기 (디버깅 우선)
+			int idx = sf * TABLE_SIZE + sb;
+			float tau_avg, cr_avg, cg_avg, cb_avg;
+
+			if (sf == sb) {
+				tau_avg = alphaTable[sf];
+				cr_avg = colorTableR[sf] * alphaTable[sf];
+				cg_avg = colorTableG[sf] * alphaTable[sf];
+				cb_avg = colorTableB[sf] * alphaTable[sf];
+			}
+			else {
+				float inv_diff = 1.0f / (float)(sb - sf);
+				tau_avg = (preT[sb] - preT[sf]) * inv_diff;
+				cr_avg = (preKr[sb] - preKr[sf]) * inv_diff;
+				cg_avg = (preKg[sb] - preKg[sf]) * inv_diff;
+				cb_avg = (preKb[sb] - preKb[sf]) * inv_diff;
+			}
+
+			float alphaVal = 1.0f - expf(-segmentLength * tau_avg);
+			preAlpha[idx] = alphaVal;
+			// 흡수 무시 근사: C ? c_avg * d
+			preColorR[idx] = cr_avg * segmentLength;
+			preColorG[idx] = cg_avg * segmentLength;
+			preColorB[idx] = cb_avg * segmentLength;
+		}
+	}
+}
 
 void Render(glm::vec3 eye) {
 	using namespace glm;
@@ -361,6 +421,7 @@ void MyInit() {
 	glEnable(GL_TEXTURE_2D);
 
 	InitTables();
+	BuildPreIntegrationTable(DEFAULT_SEGMENT_LENGTH);
 	cuInit();
 }
 extern "C" int cumain(float ex, float ey, float ez);
