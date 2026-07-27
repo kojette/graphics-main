@@ -10,3 +10,12 @@ Release/
 *.pdb
 *.log
 *.tlog
+
+# 모든 파일/폴더 일단 무시
+*
+
+# 예외적으로 Git에 추적(유지)할 파일들만 허용 (!)
+!.gitignore
+!README.md
+!main.cpp
+!cumian.cu
