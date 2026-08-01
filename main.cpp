@@ -1,4 +1,4 @@
-#include <GL/glut.h>
+ï»¿#include <GL/glut.h>
 #include <iostream>
 #include <fstream>
 #include <stdio.h>
@@ -8,7 +8,7 @@
 
 #include <vector>
 #include <algorithm>
-// ½Ã°£ ÃøÁ¤µî °í¼º´É ÇÔ¼ö
+// ì‹œê°„ ì¸¡ì •ë“± ê³ ì„±ëŠ¥ í•¨ìˆ˜
 #include <chrono> 
 using namespace std;
 
@@ -19,41 +19,29 @@ using namespace std;
 #define VOLX 256
 #define VOLY 256	
 #define VOLZ 225
-const int BSIZE = 8;
-const int BSHIFT = 3;
 
-unsigned char ImageBuf[HEIGHT][WIDTH];
 unsigned char MyTexture[HEIGHT][WIDTH][3];
 unsigned char vol[VOLZ][VOLY][VOLX];
 
-//¼öÁ¤ ÀÌÀü
-const int BZ_COUNT = VOLZ / BSIZE + (VOLZ % BSIZE != 0); // 29
-const int BY_COUNT = VOLY / BSIZE + (VOLY % BSIZE != 0); // 32
-const int BX_COUNT = VOLX / BSIZE + (VOLX % BSIZE != 0); // 32
-unsigned char bM[BZ_COUNT][BY_COUNT][BX_COUNT];
-unsigned char bm[BZ_COUNT][BY_COUNT][BX_COUNT];
-
 float alphaTable[256];
-float sumTable[256];
 float colorTableR[256];
 float colorTableG[256];
 float colorTableB[256];
 
 //pre-integration
-#define DEFAULT_SEGMENT_LENGTH 0.5f   // ±âÁ¸ ÄÚµåÀÇ step=0.5 ¿Í µ¿ÀÏ °ª (È£È¯¼º)
+#define DEFAULT_SEGMENT_LENGTH 0.5f   // ê¸°ì¡´ ì½”ë“œì˜ step=0.5 ì™€ ë™ì¼
 #define TABLE_SIZE 256         
-// preT[s]  = ¡ò[0..s] alphaTable(s') ds'  (³í¹® T(s), ¥óÀÇ ´©ÀûÀûºĞ)
-// preKr/g/b[s] = ¡ò[0..s] colorTable(s') ds' (³í¹® K(s), c?ÀÇ ´©ÀûÀûºĞ)
+// ì•ŒíŒŒ, ì»¬ëŸ¬ì˜ ì ë¶„
 float preT[TABLE_SIZE];
 float preKr[TABLE_SIZE], preKg[TABLE_SIZE], preKb[TABLE_SIZE];
-// ÁÂÇ¥ÃàÀÌ (sf, sb) µÎ °³ÀÎ 2D Å×ÀÌºí. CPU¿¡¼­ ¸¸µç µÚ GPU·Î 1È¸ ¾÷·Îµå.
-// ¹è¿­Àº 1Â÷¿øÀ¸·Î ÆîÃÄ¼­ ÀúÀå: index = sf * TABLE_RES + sb
+// ì¢Œí‘œì¶•ì´ (sf, sb) ë‘ ê°œì¸ 2D í…Œì´ë¸”. CPUì—ì„œ ë§Œë“  ë’¤ GPUë¡œ 1íšŒ ì—…ë¡œë“œ.
+// ë°°ì—´ì€ 1ì°¨ì›ìœ¼ë¡œ
 float preAlpha[TABLE_SIZE * TABLE_SIZE];
 float preColorR[TABLE_SIZE * TABLE_SIZE];
 float preColorG[TABLE_SIZE * TABLE_SIZE];
 float preColorB[TABLE_SIZE * TABLE_SIZE];
 
-//±¸Á¶Ã¼----------------------------------------------------------------
+//êµ¬ì¡°ì²´----------------------------------------------------------------
 struct alphaPoint {
 	int x;//density
 	float y;//alpha
@@ -66,21 +54,20 @@ public:
 		alphas.push_back({ x, y });
 	}
 	void MakeAlphaTable(float alphaTable[256]) {
-		if (alphas.size() < 2) return;//¸¸¾à Á¡ ¾È ÂïÀ» °æ¿ì ¿¹¿Ü°¡ ¾øÀ» °ÍÀ» ´ëºñ
+		if (alphas.size() < 2) return;//ë§Œì•½ ì  ì•ˆ ì°ì„ ê²½ìš° ì˜ˆì™¸ê°€ ì—†ì„ ê²ƒì„ ëŒ€ë¹„
 
-		//x ±âÁØ Á¤·Ä
+		//x ê¸°ì¤€ ì •ë ¬
 		sort(alphas.begin(), alphas.end(), [](const alphaPoint& a, const alphaPoint& b) {
 			return a.x < b.x;
 			});
-		for (int i = 0; i < alphas.size() - 1; i++) {//±¸°£ º°
-			//°¡½Ã¼ºÀ» À§ÇÑ? °Í °°Àº ±³¼ö´Ôst?
+		for (int i = 0; i < alphas.size() - 1; i++) {//êµ¬ê°„ ë³„
 			int x0 = alphas[i].x;
 			int x1 = alphas[i + 1].x;
 			float y0 = alphas[i].y;
 			float y1 = alphas[i + 1].y;
 
 			float _len = 1 / float(x1 - x0);
-			for (int j = x0; j <= x1; j++) {//ÇÑ ±¸°£ ³»
+			for (int j = x0; j <= x1; j++) {//í•œ êµ¬ê°„ ë‚´
 				float a = (y0 * (x1 - j) + y1 * (j - x0)) * _len;
 				if (a < 0) a = 0;
 				else if (a > 1) a = 1;
@@ -90,7 +77,7 @@ public:
 	}
 };
 
-//color¹öÀü
+//colorë²„ì „
 struct colorPoint {
 	int x;      // density
 	float r;    // red
@@ -109,16 +96,16 @@ public:
 	void MakeColorTable(float colorTableR[256],
 		float colorTableG[256],
 		float colorTableB[256]) {
-		if (colors.size() < 2) return; //Á¡ ºÎÁ· ¿¹¿Ü Ã³¸®
+		if (colors.size() < 2) return; //ì  ë¶€ì¡± ì˜ˆì™¸ ì²˜ë¦¬
 
-		//x ±âÁØ Á¤·Ä
+		//x ê¸°ì¤€ ì •ë ¬
 		sort(colors.begin(), colors.end(),
 			[](const colorPoint& a, const colorPoint& b) {
 				return a.x < b.x;
 			});
 
 		for (int i = 0; i < colors.size() - 1; i++) {
-			//°¡µ¶¼º Á¤¸®
+			//ê°€ë…ì„± ì •ë¦¬
 			int x0 = colors[i].x;
 			int x1 = colors[i + 1].x;
 
@@ -131,20 +118,20 @@ public:
 			float b1 = colors[i + 1].b;
 
 			for (int j = x0; j <= x1; j++) {
-				float t = float(j - x0) / float(x1 - x0);//³ª´°¼À ¿¬»ê ºñ½Î´Ï±î ÇÑ¹øÀ¸·Î 
+				float t = float(j - x0) / float(x1 - x0);//ë‚˜ëˆ—ì…ˆ ì—°ì‚° ë¹„ì‹¸ë‹ˆê¹Œ í•œë²ˆìœ¼ë¡œ 
 
 				float r = r0 * (1 - t) + r1 * t;
 				float g = g0 * (1 - t) + g1 * t;
 				float b = b0 * (1 - t) + b1 * t;
 
-				colorTableR[j] = glm::clamp(r, 0.0f, 1.0f);//º¸¿©ÁÖ½Å ÇÔ¼ö?
+				colorTableR[j] = glm::clamp(r, 0.0f, 1.0f);//ë³´ì—¬ì£¼ì‹  í•¨ìˆ˜?
 				colorTableG[j] = glm::clamp(g, 0.0f, 1.0f);
 				colorTableB[j] = glm::clamp(b, 0.0f, 1.0f);
 			}
 		}
 	}
 };
-//ÇÔ¼öµé----------------------------------------------------------------
+//í•¨ìˆ˜ë“¤----------------------------------------------------------------
 void FileRead()
 {
 	std::ifstream myfile;
@@ -156,98 +143,35 @@ void FileRead()
 	myfile.close();
 }
 
-inline bool isOutside(const glm::vec3& p) {//¹üÀ§ Ã³¸® µû¶ó, ¾ËÆÄ ÄÃ·¯¿¡¼­´Â ºÒÇÊ¿ä
-	if (p.x >= VOLX || p.x < 0 ||
-		p.y >= VOLY || p.y < 0 ||
-		p.z >= VOLZ || p.z < 0) return true;
-	else
-		return false;
-}
-
-void GenBlocks() { //¼öÁ¤A-2: 29, 32, 32¿¡¼­ °¢°¢ B~_COUNT
-	for (int bz = 0; bz < BZ_COUNT; bz++) // BZ = 28 
-		for (int by = 0; by < BY_COUNT; by++)
-			for (int bx = 0; bx < BX_COUNT; bx++) { // °¢ ºí·Ï¿¡ ´ëÇØ¼­
-				unsigned char max_value = 0, min_value = 255;
-				// ÃÖ´ë°ªÀ» ÃßÃâÇØ¼­ //(°³¼±+; °æ°è°ª Ãß°¡)
-				for (int z = bz * BSIZE; z <= __min(bz * BSIZE + BSIZE, VOLZ - 1); z++) { // 28*8 = for 224      z<232      vol[226]
-					for (int y = by * BSIZE; y <= __min(by * BSIZE + BSIZE, VOLY - 1); y++) {
-						for (int x = bx * BSIZE; x <= __min(bx * BSIZE + BSIZE, VOLX - 1); x++) { //bx=31, 31*8=248~256
-							max_value = __max(vol[z][y][x], max_value);
-							min_value = __min(vol[z][y][x], min_value);
-						}
-					}
-				}
-				// ÀúÀåÇÑ´Ù.
-				bM[bz][by][bx] = max_value;
-				bm[bz][by][bx] = min_value;
-			}
-	printf("max = %d, min = %d \n", bM[14][16][16], bm[14][16][16]);
-}
-
-int GetDensity(glm::vec3 p) {
-	int ix = int(p.x); // 4.8 ->  4
-	int iy = int(p.y); // 4.8 ->  4
-	int iz = int(p.z); // 4.8 ->  4
-	float wx = p.x - ix;
-	float wy = p.y - iy;
-	float wz = p.z - iz;
-	// y,z
-	// linear interpolation : Á÷¼±Çü º¸°£
-	// cubic interpolation : 3Â÷ ÇÔ¼ö¸¦ ÀÌ¿ëÇÑ º¸°£
-	//000	001 010 011 100 101 110 111
-	int den = vol[iz][iy][ix] * (1 - wx) * (1 - wy) * (1 - wz)
-		+ vol[iz][iy][ix + 1] * (wx) * (1 - wy) * (1 - wz)
-		+ vol[iz][iy + 1][ix] * (1 - wx) * (wy) * (1 - wz)
-		+ vol[iz][iy + 1][ix + 1] * (wx) * (wy) * (1 - wz)
-		+ vol[iz + 1][iy][ix] * (1 - wx) * (1 - wy) * (wz)
-		+vol[iz + 1][iy][ix + 1] * (wx) * (1 - wy) * (wz)
-		+vol[iz + 1][iy + 1][ix] * (1 - wx) * (wy) * (wz)
-		+vol[iz + 1][iy + 1][ix + 1] * (wx) * (wy) * (wz);
-	return den;
-}
 
 void InitTables() {
 	AlphaTable  mat;
-	mat.AddPoint(0, 0.0f);//°ø±â&¿¬Á¶Á÷ ºñ°¡½Ã
+	mat.AddPoint(0, 0.0f);//ê³µê¸°&ì—°ì¡°ì§ ë¹„ê°€ì‹œ
 	mat.AddPoint(90, 0.0f);
-	mat.AddPoint(120, 0.2f);//»À? 
+	mat.AddPoint(120, 0.2f);//ë¼ˆ? 
 	mat.AddPoint(150, 0.6f);
-	mat.AddPoint(200, 1.0f);//È®½ÇÈ÷ »À
+	mat.AddPoint(200, 1.0f);//í™•ì‹¤íˆ ë¼ˆ
 	mat.AddPoint(255, 1.0f);
 	mat.MakeAlphaTable(alphaTable);
 
-	sumTable[0] = alphaTable[0];
-	for (int i = 1; i < 256; i++) {
-		sumTable[i] = sumTable[i - 1] + alphaTable[i];
-	}
-
-	//in : alphaTable
-	//out : sumTable
-
 	ColorTable ct;
 	ct.AddPoint(0, 0.0f, 0.0f, 0.0f);
-	ct.AddPoint(120, 0.1f, 0.2f, 0.55f);   // µöºí·ç ¿ÀÆÈº£ÀÌ½º
-	ct.AddPoint(160, 0.85f, 0.5f, 0.2f);   // ºí·ç ½Ã¾È
+	ct.AddPoint(120, 0.1f, 0.2f, 0.55f);   // ë”¥ë¸”ë£¨ ì˜¤íŒ”ë² ì´ìŠ¤
+	ct.AddPoint(160, 0.85f, 0.5f, 0.2f);   // ë¸”ë£¨ ì‹œì•ˆ
 	ct.AddPoint(200, 0.7f, 0.75f, 0.3f);
 	ct.AddPoint(220, 0.97f, 0.7f, 0.8f);
-	ct.AddPoint(255, 1.0f, 0.8f, 0.85f);  // ÇÎÅ©
+	ct.AddPoint(255, 1.0f, 0.8f, 0.85f);  // í•‘í¬
 	ct.MakeColorTable(colorTableR, colorTableG, colorTableB);
 }
 
-int inline GetBlockId(glm::vec3 p) {//(°³¼±+); ½ÃÇÁÆ® ¿¬»êÀÚ·Î ºí·Ï ¾ÆÀÌµğ °è»ê
-	int x = p.x, y = p.y, z = p.z;
-	int bx = x >> BSHIFT, by = y >> BSHIFT, bz = z >> BSHIFT;
-	return (bx << 10) | (by << 5) | bz; // ¼öÁ¤A-4: ½ÃÇÁÆ® º¹È£È­·Î(¾îÂ÷ÇÇ Áø¼öÇ¥Çö¸¸ »óÀÌ)
-}
 void BuildPreIntegrationTable(float segmentLength) {
-	// 1) preT, preK ´©Àû ÀûºĞ (»ç´Ù¸®²Ã)
+	//ëˆ„ì  ì ë¶„
 	preT[0] = 0.0f;
 	preKr[0] = preKg[0] = preKb[0] = 0.0f;
 	for (int s = 1; s < TABLE_SIZE; s++) {
-		// preT: tauÀÇ ´©Àû (tau ? alphaTable)
+		// preT:alphaTable
 		preT[s] = preT[s - 1] + 0.5f * (alphaTable[s - 1] + alphaTable[s]);
-		// preK: associated colorÀÇ ´©Àû
+		// preK:associated colorì˜ ëˆ„ì 
 		float ar0 = colorTableR[s - 1] * alphaTable[s - 1];
 		float ar1 = colorTableR[s] * alphaTable[s];
 		float ag0 = colorTableG[s - 1] * alphaTable[s - 1];
@@ -259,13 +183,13 @@ void BuildPreIntegrationTable(float segmentLength) {
 		preKb[s] = preKb[s - 1] + 0.5f * (ab0 + ab1);
 	}
 
-	// 2) 2D Å×ÀÌºí
+	//2ì°¨ì› í…Œì´ë¸”
 	for (int sf = 0; sf < TABLE_SIZE; sf++) {
-		for (int sb = 0; sb < TABLE_SIZE; sb++) {  // ´ëÄª ÃÖÀûÈ­ ÇÏÁö ¸»°í ÀüºÎ Ã¤¿ì±â (µğ¹ö±ë ¿ì¼±)
+		for (int sb = 0; sb < TABLE_SIZE; sb++) {
 			int idx = sf * TABLE_SIZE + sb;
 			float tau_avg, cr_avg, cg_avg, cb_avg;
 
-			if (sf == sb) {
+			if (sf == sb) {//ì•ŒíŒŒê°’ì€ ëŒ€ì¹­ ìµœì í™” í•´ë„ ë ë“¯?
 				tau_avg = alphaTable[sf];
 				cr_avg = colorTableR[sf] * alphaTable[sf];
 				cg_avg = colorTableG[sf] * alphaTable[sf];
@@ -281,7 +205,7 @@ void BuildPreIntegrationTable(float segmentLength) {
 
 			float alphaVal = 1.0f - expf(-segmentLength * tau_avg);
 			preAlpha[idx] = alphaVal;
-			// Èí¼ö ¹«½Ã ±Ù»ç: C ? c_avg * d
+			// í¡ìˆ˜ ë¬´ì‹œ ê·¼ì‚¬: C â‰ˆ c_avg * d
 			preColorR[idx] = cr_avg * segmentLength;
 			preColorG[idx] = cg_avg * segmentLength;
 			preColorB[idx] = cb_avg * segmentLength;
@@ -289,132 +213,10 @@ void BuildPreIntegrationTable(float segmentLength) {
 	}
 }
 
-void Render(glm::vec3 eye) {
-	using namespace glm;
-
-	glm::vec3 at(128, 128, 112);
-	glm::vec3 up(0, 1, 0);
-
-	glm::vec3 w = glm::normalize(at - eye);
-	glm::vec3 u = glm::normalize(glm::cross(up, w));
-	glm::vec3 v = glm::normalize(glm::cross(w, u));
-
-
-	auto start = std::chrono::high_resolution_clock::now();
-	const float supersampling = 0.5f * (512.0f / WIDTH);
-	/////////////////·¹ÀÌÄ³½ºÆÃ
-	for (int y = 0; y < HEIGHT; y++) { // ¿µ»óÀÇ yÁÂÇ¥
-		for (int x = 0; x < WIDTH; x++) { // ¿µ»óÀÇ xÁÂÇ¥
-			glm::vec3 RS = eye + u * (x - WIDTH * 0.5f) * supersampling + v * (y - HEIGHT * 0.5f) * supersampling;
-
-			float t1, t2; // ÇÑ ±¸°£
-			t1 = -RS.x / w.x;
-			t2 = (255 - RS.x) / w.x;
-			float xm = __min(t1, t2);
-			float xM = __max(t1, t2);
-
-			t1 = -RS.y / w.y;
-			t2 = (255 - RS.y) / w.y;
-			float ym = __min(t1, t2);
-			float yM = __max(t1, t2);
-
-			t1 = -RS.z / w.z;
-			t2 = (224 - RS.z) / w.z;
-			float zm = __min(t1, t2);
-			float zM = __max(t1, t2);
-			float tm = __max(__max(xm, ym), zm);
-			float tM = __min(__min(xM, yM), zM);
-
-			float r_sum = 0.0f, g_sum = 0.0f, b_sum = 0.0f;
-			float a_sum = 0.0f;
-
-			const float step = 0.5;
-			for (float t = tm; t < tM; t = t + step) { // ±¤¼±À» ÁøÇàÇÏÀÚ
-				glm::vec3 p = RS + w * t;
-				if (isOutside(p))
-					continue;
-
-				// ³»(p)°¡ ¼ÓÇÑ ºí·ÏÀÇ min, max ¾È´Ù°í °¡Á¤.
-				int bid = GetBlockId(p); // 123456
-				// ¼öÁ¤A-5: ºñÆ®¿¬»êÀÚ È°¿ëÇØ º½. 
-				int bz = bid & 0x1F; //1F(16+15)ÀÓ Áï, 11111ÀÌ°í &¿¬»êÇÔ. (0x20-0x01ÇØµµ?)             
-				int by = (bid >> 5) & 0x1F; // 5°³ Áö¿ì°í ³²Àº ¿À¸¥ÂÊ 5°³ ÃßÃâ
-				int bx = (bid >> 10) & 0x1F; // ÀÌÇÏ µ¿ÀÏ
-				int min_value = bm[bz][by][bx];
-				int max_value = bM[bz][by][bx];
-				if (sumTable[max_value] - sumTable[min_value - 1] == 0) {
-					float jump = 0;
-					int nextBid;
-					// Åõ¸íÇÑ ºí·ÏÀÓ
-					//Åõ¸íÇÑ ºí·ÏÀÌ´Ï±î, ¿¬»êÀ» °Ç³Ê¶ÙÀÚ. ±¤¼±À» ºü¸£°Ô ÀüÁøÇÏÀÚ.
-					do {
-						jump += 1.0f;
-						nextBid = GetBlockId(p + w * jump); // Ãß°¡ ÀüÁø
-					} while (bid == nextBid);
-					t = t + (jump - step);
-					continue;
-				}
-
-
-				int d = GetDensity(p); // vol[(int)(p.z)][int(p.y)][int(p.x)]; // d = x¼± Èí¼öµµ, d°¡ ³ôÀ¸¸é »À d°¡ ³·À¸¸é ±ÙÀ°, Áö¹æ, °ø±â
-
-				float alpha = alphaTable[d]; // getAlpha(50, 200, d);
-				if (alpha == 0)
-					continue;
-				alpha = 1 - pow((1 - alpha), step); // alpha-correction
-
-
-				float r = colorTableR[d]; // d / 255.0;
-				float g = colorTableG[d];
-				float b = colorTableB[d];
-
-				//Á¶¸í; Áß¾ÓÂ÷ºĞ¹ı
-				float dx = (GetDensity(p + vec3(1, 0, 0)) - GetDensity(p - vec3(1, 0, 0))) * 0.5f; // ¼öÁ¤: 0.5 -> 0.5f (float ¸®ÅÍ·²)
-				float dy = (GetDensity(p + vec3(0, 1, 0)) - GetDensity(p - vec3(0, 1, 0))) * 0.5f; // ¼öÁ¤: 0.5 -> 0.5f
-				float dz = (GetDensity(p + vec3(0, 0, 1)) - GetDensity(p - vec3(0, 0, 1))) * 0.5f; // ¼öÁ¤: 0.5 -> 0.5f
-
-				vec3 V = w;
-				vec3 N(dx, dy, dz), L = w;// (1, 0, 0);
-
-				if (length(N) > 0.0f) N = normalize(N);
-				vec3 H = normalize(L + V);
-				float NL = fabs(dot(N, L));
-				float NH = fabs(dot(N, H));
-
-
-
-				float Ia = 0.25f, Id = 0.5f, Is = 0.9f;  //»ìÂ¦ ¹à°Ô // ÇÕÀÌ 1ÀÎ°Ô ÁÁÀºµ¥ ¿©·¯ Ç¥Çö °¡´É
-
-
-				glm::vec3 Ka(r * 0.8f, g * 0.8f, b * 0.8f); //ÁÖº¯±¤ ¹İ»çÀ² 0.8 °ö(¾îµÎ¿î ¹è°æ ¿¬Ãâ) // k = ¹İ»çÀ² = »ö»ó(Áß¿ä!!!!!! ³î¶ø±º)
-				glm::vec3 Kd(r, g, b);// = c;
-				glm::vec3 Ks(1.2f, 0.8f, 0.8f); //¿ÀÆÈ ´À³¦
-
-				glm::vec3 I = Ia * Ka + Id * Kd * NL + Is * Ks * pow(NH, 30.0f);
-				I = glm::clamp(I, 0.0f, 1.0f);//__min
-
-				r_sum += (1.0f - a_sum) * (I.r * alpha);
-				g_sum += (1.0f - a_sum) * (I.g * alpha);
-				b_sum += (1.0f - a_sum) * (I.b * alpha);
-				a_sum += (1.0f - a_sum) * alpha;
-				if (a_sum > 0.99f) break; // Á¶±â ±¤¼± Á¾·á, early ray termination
-
-			}
-			MyTexture[y][x][0] = int(r_sum * 255);
-			MyTexture[y][x][1] = int(g_sum * 255);
-			MyTexture[y][x][2] = int(b_sum * 255);
-
-		}
-	}
-	auto end = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-	std::cout << "½ÇÇà ½Ã°£: " << duration.count() * 0.001f << " ms" << std::endl;
-}
 extern "C" int cuInit();
 void MyInit() {
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	FileRead();
-	GenBlocks(); // ÆÄÀÏÀº ÀĞ°í ³­ ´ÙÀ½¿¡.
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
@@ -426,7 +228,7 @@ void MyInit() {
 }
 extern "C" int cumain(float ex, float ey, float ez);
 void MyDisplay() {
-	////////////////Ä«¸Ş¶ó ¼¼ÆÃ
+	////////////////ì¹´ë©”ë¼ ì„¸íŒ…
 	static float t = 0;
 	t += 1.0;
 	glm::vec3 eye(sin(t * 0.1) * 50, 0, 100);
@@ -449,8 +251,7 @@ void MyDisplay() {
 }
 
 int main(int argc, char** argv) {
-	//cumain();
-	glutInit(&argc, argv); //GLUT À©µµ¿ì ÇÔ¼ö
+	glutInit(&argc, argv); //GLUT ìœˆë„ìš° í•¨ìˆ˜
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
 	glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
 	glutCreateWindow("OpenGL Drawing Example");
@@ -458,6 +259,5 @@ int main(int argc, char** argv) {
 	glutDisplayFunc(MyDisplay);
 	glutIdleFunc(MyDisplay);
 	glutMainLoop();
-
 	return 0;
 }
