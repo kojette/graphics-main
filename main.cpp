@@ -40,7 +40,7 @@ float colorTableG[256];
 float colorTableB[256];
 
 //pre-integration
-#define DEFAULT_SEGMENT_LENGTH 0.5f   // 기존 코드의 step=0.5 와 동일 값 (호환성)
+#define DEFAULT_SEGMENT_LENGTH 2.0f   // 기존 코드의 step=0.5 와 동일 값 (호환성)
 #define TABLE_SIZE 256         
 // 좌표축이 (sf, sb) 두 개인 2D 테이블. CPU에서 만든 뒤 GPU로 1회 업로드.
 // 배열은 1차원으로
@@ -203,30 +203,50 @@ int GetDensity(glm::vec3 p) {
 }
 
 void InitTables() {
-	AlphaTable  mat;
-	mat.AddPoint(0, 0.0f);//공기&연조직 비가시
+	AlphaTable mat;
+	mat.AddPoint(0, 0.0f);      //공기&연조직 비가시
 	mat.AddPoint(90, 0.0f);
-	mat.AddPoint(120, 0.2f);//뼈? 
-	mat.AddPoint(150, 0.6f);
-	mat.AddPoint(200, 1.0f);//확실히 뼈
-	mat.AddPoint(255, 1.0f);
+	mat.AddPoint(98, 0.85f);    //여기부터 8단위로 진동
+	mat.AddPoint(106, 0.0f);
+	mat.AddPoint(114, 0.85f);
+	mat.AddPoint(122, 0.0f);
+	mat.AddPoint(130, 0.85f);
+	mat.AddPoint(138, 0.0f);
+	mat.AddPoint(146, 0.85f);
+	mat.AddPoint(154, 0.0f);
+	mat.AddPoint(162, 0.85f);
+	mat.AddPoint(170, 0.0f);
+	mat.AddPoint(178, 0.85f);
+	mat.AddPoint(186, 0.0f);
+	mat.AddPoint(194, 0.85f);
+	mat.AddPoint(202, 0.0f);
+	mat.AddPoint(210, 0.85f);
+	mat.AddPoint(218, 0.0f);
+	mat.AddPoint(226, 0.85f);
+	mat.AddPoint(234, 0.0f);
+	mat.AddPoint(242, 0.85f);
+	mat.AddPoint(250, 0.0f);
+	mat.AddPoint(255, 0.0f);
 	mat.MakeAlphaTable(alphaTable);
 
 	sumTable[0] = alphaTable[0];
 	for (int i = 1; i < 256; i++) {
 		sumTable[i] = sumTable[i - 1] + alphaTable[i];
-	}
-
-	//in : alphaTable
-	//out : sumTable
+	} //in : alphaTable, out : sumTable
 
 	ColorTable ct;
 	ct.AddPoint(0, 0.0f, 0.0f, 0.0f);
-	ct.AddPoint(120, 0.1f, 0.2f, 0.55f);   // 딥블루 오팔베이스
-	ct.AddPoint(160, 0.85f, 0.5f, 0.2f);   // 블루 시안
-	ct.AddPoint(200, 0.7f, 0.75f, 0.3f);
-	ct.AddPoint(220, 0.97f, 0.7f, 0.8f);
-	ct.AddPoint(255, 1.0f, 0.8f, 0.85f);  // 핑크
+	ct.AddPoint(90, 0.1f, 0.2f, 0.55f);
+	ct.AddPoint(106, 0.95f, 0.3f, 0.2f);   //봉우리마다 색이 바뀌도록
+	ct.AddPoint(122, 0.2f, 0.9f, 0.4f);
+	ct.AddPoint(138, 0.3f, 0.4f, 1.0f);
+	ct.AddPoint(154, 0.95f, 0.85f, 0.2f);
+	ct.AddPoint(170, 0.9f, 0.3f, 0.9f);
+	ct.AddPoint(186, 0.2f, 0.9f, 0.9f);
+	ct.AddPoint(202, 0.95f, 0.5f, 0.2f);
+	ct.AddPoint(218, 0.4f, 0.95f, 0.5f);
+	ct.AddPoint(234, 0.5f, 0.4f, 1.0f);
+	ct.AddPoint(255, 1.0f, 0.8f, 0.85f);
 	ct.MakeColorTable(colorTableR, colorTableG, colorTableB);
 }
 
@@ -235,22 +255,18 @@ int inline GetBlockId(glm::vec3 p) {//(개선+); 시프트 연산자로 블록 �
 	int bx = x >> BSHIFT, by = y >> BSHIFT, bz = z >> BSHIFT;
 	return (bx << 10) | (by << 5) | bz; // 수정A-4: 시프트 복호화로(어차피 진수표현만 상이)
 }
-void BuildPreIntegrationTable(float segmentLength) {
-	// 구간 [sf, sb] 를 |sb-sf| 개의 부분샘플로 쪼개서 실제로 알파블렌딩(front-to-back)한다.
-	// 구간 내 밀도는 sf -> sb 로 선형변화하므로, 루프변수 i 자체가 선형보간된 밀도가 된다.
-	// (지수/누적적분 근사가 아니라, 각 부분샘플의 산술적인 겹침을 그대로 합성)
-	(void)segmentLength; // 알파보정은 1/width 기준이므로 여기서는 쓰지 않음
+void BuildPreIntegrationTable() {
 
-	for (int sf = 0; sf < TABLE_SIZE; sf++) {          // front density
-		for (int sb = 0; sb < TABLE_SIZE; sb++) {      // back density
+	for (int sf = 0; sf < TABLE_SIZE; sf++) {          // front
+		for (int sb = 0; sb < TABLE_SIZE; sb++) {      // back
 			int idx = sf * TABLE_SIZE + sb;
 
 			float r_sum = 0.0f, g_sum = 0.0f, b_sum = 0.0f, a_sum = 0.0f;
 
 			int n = (sb > sf) ? (sb - sf) : (sf - sb);  // 부분샘플 개수
-			if (n == 0) {
-				// 밀도 변화가 없는 구간: 부분샘플 1개짜리와 동일 (보정 지수 = 1)
+			if (n == 0) {//밀도 면화 없
 				float a = alphaTable[sf];
+				a = 1.0f - powf(1.0f - a, DEFAULT_SEGMENT_LENGTH);
 				a_sum = a;
 				r_sum = colorTableR[sf] * a;
 				g_sum = colorTableG[sf] * a;
@@ -258,27 +274,26 @@ void BuildPreIntegrationTable(float segmentLength) {
 			}
 			else {
 				float width = (float)n;
-				float inv_width = 1.0f / width;             // 부분샘플 하나의 두께
-				int dir = (sb > sf) ? 1 : -1;               // 광선 진행 방향(sf -> sb) 유지
+				float inv_width = DEFAULT_SEGMENT_LENGTH / width;             // 부분샘플 두께
+				int dir = (sb > sf) ? 1 : -1;               // 광선 진행 방향(sf -> sb)
 
 				for (int i = sf; i != sb; i += dir) {
 					float alpha = alphaTable[i];
 					if (alpha > 0.0f) {
-						// alpha-correction : 얇아진 두께(1/width)에 맞춰 보정
+						// alphan correction
 						float ca = 1.0f - powf(1.0f - alpha, inv_width);
 
-						// front-to-back alpha blending (associated color)
 						r_sum += (1.0f - a_sum) * colorTableR[i] * ca;
 						g_sum += (1.0f - a_sum) * colorTableG[i] * ca;
 						b_sum += (1.0f - a_sum) * colorTableB[i] * ca;
 						a_sum += (1.0f - a_sum) * ca;
 
-						if (a_sum > 0.9999f) break;         // 구간 내 조기 종료
+						if (a_sum > 0.9999f) break;
 					}
 				}
 			}
 
-			// 한 구간을 통째로 합성한 결과를 저장 (커널의 사용 방식과 동일한 계약)
+			// 한 구간을 통째로 합성한 결과를 저장
 			preAlpha[idx] = a_sum;
 			preColorR[idx] = r_sum;
 			preColorG[idx] = g_sum;
@@ -419,7 +434,7 @@ void MyInit() {
 	glEnable(GL_TEXTURE_2D);
 
 	InitTables();
-	BuildPreIntegrationTable(DEFAULT_SEGMENT_LENGTH);
+	BuildPreIntegrationTable();
 	cuInit();
 }
 extern "C" int cumain(float ex, float ey, float ez);

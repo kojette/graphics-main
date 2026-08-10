@@ -11,6 +11,7 @@
 #define VOLY 256	
 #define VOLZ 225
 #define TABLE_SIZE 256
+#define DEFAULT_SEGMENT_LENGTH 0.5f
 
 // GPU측 포인터
 float* dev_preAlpha = 0;
@@ -49,7 +50,7 @@ __global__ void addKernel(int* c, const int* a, const int* b) {
     int i = threadIdx.x;
     c[i] = a[i] + b[i];
 }
-__global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, float3 eye, 
+__global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, float3 eye,
     float* dev_preAlpha, float* dev_preColorR, float* dev_preColorG, float* dev_preColorB) {
     int y = blockIdx.x;
     int x = blockIdx.y * blockDim.x + threadIdx.x; //threadIdx.x;
@@ -80,13 +81,13 @@ __global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, 
     float tM = fminf(fminf(xM, yM), zM);
     if (tm > tM) return;
 
-    const float step = 0.5;//segmentLength로 통일해도 좋을 것 같다만?
+    const float step = DEFAULT_SEGMENT_LENGTH;
     //float maxVal = 0.0f;//MIP관련으로 
     float r_sum = 0.0f, g_sum = 0.0f, b_sum = 0.0f, a_sum = 0.0f;
     //최초 1회 front만 읽고 이후에는 back을 사용하기 위해서 아래 계산을 시행. 
     int sf = (int)roundf(tex3D<float>(volTex, RS.x + w.x * tm + 0.5f, RS.y + w.y * tm + 0.5f, RS.z + w.z * tm + 0.5f) * (float)(TABLE_SIZE - 1));
     for (float t = tm; t < tM - step; t += step) { //광선
-        float3 p = RS + w * (t+step);//뒤에 
+        float3 p = RS + w * (t + step);//뒤에 
 
         //쿠다텍스처는 좌표가 경계를 의미하지 않아서 오프셋 처리 해야 결과 유지됨. 
         float val = tex3D<float>(volTex, p.x + 0.5f, p.y + 0.5f, p.z + 0.5f);//(volTex, p.x, p.y, p.z); 
@@ -106,7 +107,7 @@ __global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, 
         }
         if (a_sum > 0.99f) break;
         sf = sb;//다음 회차에 쓰려구
-    
+
     }
     r_sum = fminf(fmaxf(r_sum, 0.0f), 1.0f);
     g_sum = fminf(fmaxf(g_sum, 0.0f), 1.0f);
