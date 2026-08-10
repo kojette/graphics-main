@@ -288,7 +288,7 @@ void BuildPreIntegrationTable() {
 						b_sum += (1.0f - a_sum) * colorTableB[i] * ca;
 						a_sum += (1.0f - a_sum) * ca;
 
-						if (a_sum > 0.9999f) break;
+						if (a_sum > 0.99f) break;
 					}
 				}
 			}

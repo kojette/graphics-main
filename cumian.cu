@@ -11,7 +11,7 @@
 #define VOLY 256	
 #define VOLZ 225
 #define TABLE_SIZE 256
-#define DEFAULT_SEGMENT_LENGTH 0.5f
+#define DEFAULT_SEGMENT_LENGTH 2.0f
 
 // GPU측 포인터
 float* dev_preAlpha = 0;
