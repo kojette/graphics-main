@@ -40,7 +40,7 @@ float colorTableG[256];
 float colorTableB[256];
 
 //pre-integration
-#define DEFAULT_SEGMENT_LENGTH 2.0f   // 기존 코드의 step=0.5 와 동일 값 (호환성)
+#define DEFAULT_SEGMENT_LENGTH 0.5f   // 기존 코드의 step=0.5 와 동일 값 (호환성)
 #define TABLE_SIZE 256         
 // 좌표축이 (sf, sb) 두 개인 2D 테이블. CPU에서 만든 뒤 GPU로 1회 업로드.
 // 배열은 1차원으로
@@ -256,7 +256,7 @@ int inline GetBlockId(glm::vec3 p) {//(개선+); 시프트 연산자로 블록 �
 	return (bx << 10) | (by << 5) | bz; // 수정A-4: 시프트 복호화로(어차피 진수표현만 상이)
 }
 void BuildPreIntegrationTable() {
-
+	auto t_start = std::chrono::high_resolution_clock::now();//
 	for (int sf = 0; sf < TABLE_SIZE; sf++) {          // front
 		for (int sb = 0; sb < TABLE_SIZE; sb++) {      // back
 			int idx = sf * TABLE_SIZE + sb;
@@ -300,6 +300,12 @@ void BuildPreIntegrationTable() {
 			preColorB[idx] = b_sum;
 		}
 	}
+	auto t_end = std::chrono::high_resolution_clock::now();     // 추가
+	auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start);
+	std::cout << "[pre-integration] 테이블 생성: " << dur.count() * 0.001f << " ms"
+		<< " (" << TABLE_SIZE << "x" << TABLE_SIZE << " = "
+		<< TABLE_SIZE * TABLE_SIZE << " entries, seg="
+		<< DEFAULT_SEGMENT_LENGTH << ")" << std::endl;
 }
 
 void Render(glm::vec3 eye) {
