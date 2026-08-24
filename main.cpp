@@ -40,7 +40,7 @@ float colorTableG[256];
 float colorTableB[256];
 
 //pre-integration
-#define DEFAULT_SEGMENT_LENGTH 0.5f   // 기존 코드의 step=0.5 와 동일 값 (호환성)
+#define DEFAULT_SEGMENT_LENGTH 2.0f   // 기존 코드의 step=0.5 와 동일 값 (호환성)
 #define TABLE_SIZE 256         
 // 좌표축이 (sf, sb) 두 개인 2D 테이블. CPU에서 만든 뒤 GPU로 1회 업로드.
 // 배열은 1차원으로

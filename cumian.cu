@@ -11,7 +11,7 @@
 #define VOLY 256	
 #define VOLZ 225
 #define TABLE_SIZE 256
-#define DEFAULT_SEGMENT_LENGTH 0.5f
+#define DEFAULT_SEGMENT_LENGTH 2.0f
 
 // GPU측 포인터
 float* dev_preAlpha = 0;
@@ -43,15 +43,50 @@ float* dev_alpha = 0;
 float* dev_colorR = 0, * dev_colorG = 0, * dev_colorB = 0;
 extern unsigned char vol[VOLZ][VOLY][VOLX];
 
-
+//법선종류
+int normalVersion = 3;//앞, 뒤, 보간
+float normalPos = 0.5f; // 버전3: 조명점의 구간 내 상대 위치(0=앞, 1=뒤)
 
 // CUDA 커널 함수: 두 배열을 더함
 __global__ void addKernel(int* c, const int* a, const int* b) {
     int i = threadIdx.x;
     c[i] = a[i] + b[i];
 }
+__device__ float3 GetNormal(cudaTextureObject_t volTex, float3 p)//법선종류(조명 함수 분할함)
+{
+    // 중앙차분
+    float dx = tex3D<float>(volTex, p.x + 1.5f, p.y + 0.5f, p.z + 0.5f)
+        - tex3D<float>(volTex, p.x - 0.5f, p.y + 0.5f, p.z + 0.5f);
+    float dy = tex3D<float>(volTex, p.x + 0.5f, p.y + 1.5f, p.z + 0.5f)
+        - tex3D<float>(volTex, p.x + 0.5f, p.y - 0.5f, p.z + 0.5f);
+    float dz = tex3D<float>(volTex, p.x + 0.5f, p.y + 0.5f, p.z + 1.5f)
+        - tex3D<float>(volTex, p.x + 0.5f, p.y + 0.5f, p.z - 0.5f);
+
+    float3 N = make_float3(dx, dy, dz);
+    float len = length(N);
+    if (len < 1e-6f) return make_float3(0.0f, 0.0f, 0.0f); // 평평한 곳
+    return N / len;
+}
+
+__device__ float lighting(float3 N, float3 w)
+{
+    float len = length(N);
+    if (len < 1e-6f) return 1.0f;   // 명암 없음(0으로 나누기 방지)
+    N = N / len;
+
+    float3 L = w;                    // 광원 = 시선 방향 (헤드라이트)
+    float3 V = w;
+    float3 H = normalize(L + V);
+
+    float NL = fabsf(dot(N, L));
+    float NH = fabsf(dot(N, H));
+
+    const float Ia = 0.25f, Id = 0.5f, Is = 0.9f;
+    return Ia + Id * NL + Is * __powf(NH, 30.0f);
+}
 __global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, float3 eye,
-    float* dev_preAlpha, float* dev_preColorR, float* dev_preColorG, float* dev_preColorB) {
+    float* dev_preAlpha, float* dev_preColorR, float* dev_preColorG, float* dev_preColorB,
+    float nw) {//법선종류
     int y = blockIdx.x;
     int x = blockIdx.y * blockDim.x + threadIdx.x; //threadIdx.x;
     //카메라 축 계산
@@ -87,7 +122,8 @@ __global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, 
     //최초 1회 front만 읽고 이후에는 back을 사용하기 위해서 아래 계산을 시행. 
     int sf = (int)roundf(tex3D<float>(volTex, RS.x + w.x * tm + 0.5f, RS.y + w.y * tm + 0.5f, RS.z + w.z * tm + 0.5f) * (float)(TABLE_SIZE - 1));
     for (float t = tm; t < tM - step; t += step) { //광선
-        float3 p = RS + w * (t + step);//뒤에 
+        float3 pf = RS + w * t;//앞//법선종류
+        float3 p = RS + w * (t + step);//뒤에
 
         //쿠다텍스처는 좌표가 경계를 의미하지 않아서 오프셋 처리 해야 결과 유지됨. 
         float val = tex3D<float>(volTex, p.x + 0.5f, p.y + 0.5f, p.z + 0.5f);//(volTex, p.x, p.y, p.z); 
@@ -97,9 +133,14 @@ __global__ void mipKernel(cudaTextureObject_t volTex, unsigned char* MyTexture, 
         float alpha = dev_preAlpha[d];
 
         if (alpha > 0.0f) {
-            float r = dev_preColorR[d];
-            float g = dev_preColorG[d];
-            float b = dev_preColorB[d];
+            float3 Nf = GetNormal(volTex, pf);//법선종류
+            float3 Nb = GetNormal(volTex, p);
+            float3 N = Nf * (1.0f - nw) + Nb * nw;//보간
+            float light = lighting(N, w);//조명 추가
+            float r = dev_preColorR[d] * light;
+            float g = dev_preColorG[d] * light;
+            float b = dev_preColorB[d] * light;
+
             r_sum += (1.0f - a_sum) * r;
             g_sum += (1.0f - a_sum) * g;
             b_sum += (1.0f - a_sum) * b;
@@ -203,7 +244,11 @@ extern "C" int cumain(float ex, float ey, float ez) { // 메모리할당은 cuInit에서
     dim3 block(threadsPerBlock);
     dim3 grid(HEIGHT, (WIDTH + threadsPerBlock - 1) / threadsPerBlock);
     //grid.x = y, grid.y = x방향을 256개씩 쪼갠 블록? 개수(스레드 개수땜)
-    mipKernel << <grid, block >> > (volTex, dev_img, eye, dev_preAlpha, dev_preColorR, dev_preColorG, dev_preColorB);
+
+    //법선종류
+    float wTable[3] = { 0.0f, 1.0f, normalPos }; // 버전 1, 2, 3
+    float nw = wTable[normalVersion - 1];
+    mipKernel << <grid, block >> > (volTex, dev_img, eye,dev_preAlpha, dev_preColorR, dev_preColorG, dev_preColorB, nw);
     cudaEventRecord(stop);
 
     cudaEventSynchronize(stop); // 커널 끝날 때까지 대기
